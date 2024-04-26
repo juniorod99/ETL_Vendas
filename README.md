@@ -245,3 +245,152 @@ SELECT * FROM Cliente
 ## Resultado
 
 ![alt text](imagens/5.png)
+
+## Dimensoes e Fatos
+
+Agora vamos criar o banco de dados das dimensoes e dos fatos.
+
+```sql
+CREATE DATABASE Dim_Fat_Vendas
+```
+
+## Dimensão do Vendedor e inserindo dados
+
+```sql
+CREATE TABLE D_Vendedor (
+   codigo_vendedor      INT IDENTITY(1,1) PRIMARY KEY,
+   nome_vendedor        varchar(20),
+   sexo_vendedor        varchar(1),
+   perc_comissao        decimal(19,2),
+   mat_funcionario      smallint not null
+);
+
+INSERT INTO Dim_Fat_Vendas.dbo.D_Vendedor (nome_vendedor, sexo_vendedor, perc_comissao, mat_funcionario)
+SELECT nmvdd, sxvdd, perccomissao, matfunc
+FROM ERP_Vendas.dbo.tbvdd;
+```
+
+## Dimensão do Dependente e inserindo dados
+
+```sql
+CREATE TABLE D_Dependente (
+   codigo_dependente      INT IDENTITY(1,1) PRIMARY KEY,
+   nome_dependente        varchar(150),
+   data_nascimento        date,
+   sexo_dependente        varchar(2),
+   codigo_vendedor        INT,
+   inep_escola			  varchar(10),
+   CONSTRAINT FK_Dep_Vdd FOREIGN KEY (codigo_vendedor) REFERENCES D_Vendedor (codigo_vendedor)
+)
+
+INSERT INTO Dim_Fat_Vendas.dbo.D_Dependente(nome_dependente, data_nascimento, sexo_dependente, codigo_vendedor, inep_escola)
+SELECT nmdep, dtnasc, sxdep, cdvdd, inepescola
+FROM ERP_Vendas.dbo.tbdep;
+```
+
+## Dimensão do Cliente e inserindo dados
+
+```sql
+CREATE TABLE D_Cliente(
+    codigo_cliente		INT IDENTITY(1,1) PRIMARY KEY,
+    nome_cliente		varchar(50) NULL,
+    idade_cliente		smallint NULL,
+    classific_cliente	smallint NULL,
+    sexo_cliente		varchar(1) NULL,
+    cidade_cliente		varchar(50) NULL,
+    estado_cliente		varchar(50) NULL,
+    pais_cliente		varchar(50) NULL,
+);
+
+INSERT INTO Dim_Fat_Vendas.dbo.D_Cliente(nome_cliente, idade_cliente, classific_cliente, sexo_cliente, cidade_cliente, estado_cliente, pais_cliente)
+SELECT DISTINCT nmcli , agecli, clacli, sxcli, cidcli, estcli, paicli
+FROM ERP_Vendas.dbo.tbven;
+```
+
+## Dimensão do Produto e inserindo dados
+
+```sql
+CREATE TABLE D_Produtos(
+    codigo_produto		INT IDENTITY(1,1) PRIMARY KEY,
+    nome_produto		varchar(50) NULL,
+    tipo_produto		varchar(1) NULL,
+    unidade_produto		varchar(2) NULL,
+    sl_produto			int NULL,
+    status_produto		varchar(50) NULL
+);
+
+INSERT INTO Dim_Fat_Vendas.dbo.D_Produtos(nome_produto, tipo_produto, unidade_produto, sl_produto, status_produto)
+SELECT nmpro, tppro, undpro, slpro, stpro
+FROM ERP_Vendas.dbo.tbpro;
+```
+
+## Dimensão das Datas e inserindo dados
+
+```sql
+CREATE TABLE D_Datas (
+    ID INT IDENTITY(1,1) PRIMARY KEY,
+    Data DATETIME,
+    Ano INT,
+    Mes INT,
+    Dia INT,
+    DiaSemana INT,
+    DiaAno INT,
+    CONSTRAINT Unique_Date UNIQUE(Data)
+);
+
+INSERT INTO Dim_Fat_Vendas.dbo.D_Datas (Data, Ano, Mes, Dia, DiaSemana, DiaAno)
+SELECT DISTINCT
+    CONVERT(DATE, dtven),
+    YEAR(dtven),
+    MONTH(dtven),
+    DAY(dtven),
+    DATEPART(WEEKDAY, dtven),
+    DATEPART(DAYOFYEAR, dtven)
+FROM ERP_Vendas.dbo.tbven;
+```
+
+## Dimensão dos Itens da Venda e inserindo dados
+
+```sql
+CREATE TABLE D_VendaItem(
+    codigo_venda_item		INT IDENTITY(1,1) PRIMARY KEY,
+    codigo_produto			int NULL,
+    quantidade_venda		int NULL,
+    valor_unitario_venda    decimal(18, 2) NULL,
+    valor_total_venda		decimal(29, 2) NULL,
+    codigo_venda			int NULL
+);
+
+ALTER TABLE D_VendaItem ADD CONSTRAINT "fk_vendas_item_produto" FOREIGN KEY ( codigo_produto ) REFERENCES D_Produtos ( codigo_produto );
+
+ALTER TABLE D_VendaItem ADD CONSTRAINT "fk_vendas_item_venda" FOREIGN KEY ( codigo_venda ) REFERENCES Venda ( codigo_venda );
+
+INSERT INTO Dim_Fat_Vendas.dbo.D_VendaItem(codigo_produto, quantidade_venda, valor_unitario_venda, valor_total_venda, codigo_venda)
+SELECT cdpro , qtven , vruven, vrtven, cdven
+FROM ERP_Vendas.dbo.tbven_item;
+```
+
+## Criando fatos da Venda e inserindo dados
+
+```sql
+CREATE TABLE F_Vendas (
+    VendaID INT IDENTITY(1,1) PRIMARY KEY,
+    ClienteID INT FOREIGN KEY REFERENCES D_Cliente(codigo_cliente),
+	VendaItemID INT FOREIGN KEY REFERENCES D_VendaItem(codigo_venda_item),
+    VendedorID INT FOREIGN KEY REFERENCES D_Vendedor(codigo_vendedor),
+    DataID INT FOREIGN KEY REFERENCES D_Datas(ID)
+);
+
+INSERT INTO F_Vendas (ClienteID, VendaItemID, VendedorID, DataID)
+SELECT DISTINCT
+    cliente.codigo_cliente AS ClienteID,
+    venda_item.codigo_venda AS VendaItemID,
+    vendedor.codigo_vendedor AS VendedorID,
+    data.ID as DataID
+FROM
+    Venda v
+    INNER JOIN D_Cliente cliente ON v.nome_cliente = cliente.nome_cliente
+    INNER JOIN D_VendaItem venda_item ON v.codigo_venda = venda_item.codigo_venda
+    INNER JOIN D_Vendedor vendedor ON v.codigo_vendedor = vendedor.codigo_vendedor
+    INNER JOIN D_Datas data ON CONVERT(DATE, v.data_venda) = data.Data;
+```
